@@ -66,6 +66,28 @@ grep -q 'dsi_native_gpio_bypass' "$I915DIR/display/intel_dsi_vbt.c" || {
 grep -q 'DSB not used for DSI output' "$I915DIR/display/intel_dsb.c" || {
   echo "0002 did not apply" >&2; exit 1; }
 
+# ---- 1b. make the in-tree trace headers reachable -------------------------
+# i915's four trace headers pin their include path to the in-tree location:
+#   #define TRACE_INCLUDE_PATH ../../drivers/gpu/drm/i915[/display|/gvt]
+# include/trace/define_trace.h resolves that relative to <KDIR>/include/trace,
+# i.e. it wants <KDIR>/drivers/gpu/drm/i915/*.h. Headers packages do not ship
+# drivers/, so an out-of-tree build dies with
+#   fatal error: ../../drivers/gpu/drm/i915/intel_uncore_trace.h: No such file
+# -I cannot help (the path is parent-relative, not -I-relative). Point that
+# exact path at the extracted sources; nothing else in the build resolves
+# through it, and the header the compiler then reads is byte-identical to the
+# one Deepin compiled in-tree, so DWARF -- and every gendwarfksyms CRC -- is
+# unaffected. KDIR needs to be writable (it is, when it is an extracted deb
+# under the repo or a copy anywhere outside /usr).
+echo "== wiring <KDIR>/drivers/gpu/drm/i915 -> $I915DIR"
+[ -w "$KDIR" ] || { echo "$KDIR is not writable (needed for the trace-header link)" >&2; exit 1; }
+mkdir -p "$KDIR/drivers/gpu/drm"
+ln -sfn "$I915DIR" "$KDIR/drivers/gpu/drm/i915"
+for h in i915_trace.h intel_uncore_trace.h display/intel_display_trace.h gvt/trace.h; do
+  [ -f "$KDIR/drivers/gpu/drm/i915/$h" ] || {
+    echo "trace header still unreachable: $KDIR/drivers/gpu/drm/i915/$h" >&2; exit 1; }
+done
+
 # ---- 2. build -------------------------------------------------------------
 # KERNELRELEASE comes from include/config/kernel.release in the headers tree,
 # so vermagic is fixed. LOCALVERSION is cleared anyway: should any sub-make
