@@ -67,6 +67,14 @@ grep -q 'DSB not used for DSI output' "$I915DIR/display/intel_dsb.c" || {
   echo "0002 did not apply" >&2; exit 1; }
 grep -q 'pci_resize_resource(pdev, resno, bar_size);' "$I915DIR/gt/intel_region_lmem.c" || {
   echo "0003 did not apply" >&2; exit 1; }
+# Both diagnostics must be drm_info_once(), never drm_dbg_kms(): Deepin's
+# kernel has no CONFIG_DRM_DEBUG_KMS, and drm_dbg_kms() is additionally gated
+# on drm.debug at runtime, so a debug-level line is invisible on a stock boot
+# and the user cannot tell whether the patches took effect.
+grep -q 'drm_info_once' "$I915DIR/display/intel_dsi_vbt.c" || {
+  echo "0001 lost its unconditional diagnostic" >&2; exit 1; }
+grep -q 'drm_info_once' "$I915DIR/display/intel_dsb.c" || {
+  echo "0002 lost its unconditional diagnostic" >&2; exit 1; }
 
 # ---- 1b. make the in-tree trace headers reachable -------------------------
 # i915's four trace headers pin their include path to the in-tree location:

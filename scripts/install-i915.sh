@@ -54,10 +54,29 @@ Installed into the immutable layer:
   $MODDIR/i915.ko.zst          (new)
   $MODDIR/$BACKUP  (original)
 
-Reboot to take effect. Afterwards check:
-  dmesg | grep -i 'Not touching native DSI GPIOs'
-  dmesg | grep -i 'DSB not used for DSI output'
-  cat /sys/module/i915/parameters/dsi_native_gpio_bypass     # -1 = auto (DMI match)
+Reboot to take effect. Afterwards check, in this order:
+
+1. Is this build actually the one running? The parameter below does not exist in
+   Deepin's shipped module, so seeing it proves the new i915.ko is loaded:
+     cat /sys/module/i915/parameters/dsi_native_gpio_bypass
+   -1 = auto (DMI decides), 0 = force off, 1 = force on.
+
+2. Both patches now announce themselves at info level (no drm.debug needed):
+     dmesg | grep -i 'Not touching native DSI GPIOs'
+     dmesg | grep -i 'DSB not used for DSI output'
+   Expected:
+     i915 ...: Not touching native DSI GPIOs (dsi_native_gpio_bypass=-1, -1 = auto/DMI), keeping firmware state
+     i915 ...: [CRTC:..:dsi-1] DSB not used for DSI output, falling back to MMIO
+   If the first line is absent, the DMI table did not match - see step 3.
+
+3. Behaviour: the torn/split image should be gone. That alone is the result.
+
+If the DMI table did not match (dmidecode -s system-product-name is neither
+DRC-WXX nor "MateBook E*"), force the bypass on the kernel cmdline:
+     i915.dsi_native_gpio_bypass=1
+Cost: the panel state has to be inherited from firmware, so a cold boot that
+starts before the firmware has powered the panel, or a resume from suspend,
+is expected to leave the screen dark.
 
 Rollback (tty or Live ISO):
   sudo deepin-immutable-ctl admin exec -- bash -c '

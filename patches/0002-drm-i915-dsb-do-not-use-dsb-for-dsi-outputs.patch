@@ -8,7 +8,7 @@
  	struct ref_tracker *wakeref;
  	struct intel_dsb *dsb;
  	unsigned int size;
-@@ -935,6 +936,21 @@
+@@ -935,6 +936,27 @@
  	if (!display->params.enable_dsb)
  		return NULL;
  
@@ -21,9 +21,15 @@
 +	 */
 +	crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
 +	if (crtc_state && intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DSI)) {
-+		drm_dbg_kms(display->drm,
-+			    "[CRTC:%d:%s] DSB not used for DSI output, falling back to MMIO\n",
-+			    crtc->base.base.id, crtc->base.name);
++		/*
++		 * drm_info_once(), not drm_dbg_kms(): drm.debug bit 2 is off
++		 * by default, so a debug-level line would prove nothing. This
++		 * is re-entered on every commit, and one line per boot is
++		 * enough to show the DSB is bypassed for the DSI pipe.
++		 */
++		drm_info_once(display->drm,
++			      "[CRTC:%d:%s] DSB not used for DSI output, falling back to MMIO\n",
++			      crtc->base.base.id, crtc->base.name);
 +		return NULL;
 +	}
 +

@@ -95,10 +95,14 @@ Reboot afterwards. Rollback is printed at the end; no reinstall needed.
 Verify after boot:
 
 ```bash
+cat /sys/module/i915/parameters/dsi_native_gpio_bypass   # -1 = auto (DMI match)
 dmesg | grep -i 'Not touching native DSI GPIOs'
 dmesg | grep -i 'DSB not used for DSI output'
-cat /sys/module/i915/parameters/dsi_native_gpio_bypass   # -1 = auto (DMI match)
 ```
+
+The first command is the proof that this module is the one running: Deepin's
+shipped `i915.ko` has no such parameter. Both `dmesg` lines are `info` level,
+so they are visible on a stock boot with no `drm.debug` switch.
 
 Secure Boot must be off: `LOCK_DOWN_IN_EFI_SECURE_BOOT=y` rejects unsigned
 modules under lockdown.
@@ -109,7 +113,10 @@ modules under lockdown.
 matches `HUAWEI` + `DRC-WXX` (or `MateBook E*`). The firmware already powered
 the panel; driving HPD / PP_CONTROL again desynchronises it and tears the image.
 Module parameter `i915.dsi_native_gpio_bypass`: `-1` auto (default), `0` never,
-`1` always.
+`1` always. Each patch fires a `drm_info_once()` line, so `dmesg` shows them
+without any `drm.debug` switch (`drm_dbg_kms()` would be invisible: Deepin's
+kernel does not set `CONFIG_DRM_DEBUG_KMS`, and DRM debug output is gated on
+`drm.debug` at runtime anyway).
 
 `0002` — `intel_dsb_prepare()` returns NULL for DSI CRTCs, forcing plain MMIO.
 Since 6.13 (`45c548642b56`) DSB is used for plane/color too, so on 6.18 this is

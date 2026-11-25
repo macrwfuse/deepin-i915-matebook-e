@@ -74,12 +74,21 @@
  static const u8 *mipi_exec_gpio(struct intel_dsi *intel_dsi, const u8 *data)
  {
  	struct intel_display *display = to_intel_display(&intel_dsi->base);
-@@ -414,6 +471,11 @@
+@@ -414,6 +471,20 @@
  	drm_dbg_kms(display->drm, "GPIO index %u, number %u, source %u, native %s, set to %s\n",
  		    gpio_index, gpio_number, gpio_source, str_yes_no(native), str_on_off(value));
  
 +	if (native && dsi_skip_native_gpio()) {
-+		drm_dbg_kms(display->drm, "Not touching native DSI GPIOs, keeping firmware state\n");
++		/*
++		 * drm_info_once(), not drm_dbg_kms(): drm_dbg_kms() output is
++		 * runtime-gated on drm.debug (bit 2 = 0x4) and is therefore
++		 * silent on a stock boot. This single line is the only direct
++		 * evidence that the bypass is what the panel is running with,
++		 * so keep it unconditional -- once per boot is enough.
++		 */
++		drm_info_once(display->drm,
++			      "Not touching native DSI GPIOs (dsi_native_gpio_bypass=%d, -1 = auto/DMI), keeping firmware state\n",
++			      dsi_native_gpio_bypass);
 +		return data + size;
 +	}
 +
