@@ -45,7 +45,8 @@ patches/      0001 native MIPI GPIO bypass, 0002 no DSB for DSI,
               0003 Deepin's 3-argument pci_resize_resource()
 abi/          ABI fingerprint of Deepin's shipped i915.ko
 tools/        verify-module.py, emit-abi-fixture.py
-scripts/      build.sh (CI), install-i915.sh (on-device)
+scripts/      build.sh (CI), install-i915.sh (on-device),
+              collect-diag.sh (on-device; read-only diagnostic dump)
 .github/      the workflow
 ```
 
@@ -106,6 +107,14 @@ so they are visible on a stock boot with no `drm.debug` switch.
 
 Secure Boot must be off: `LOCK_DOWN_IN_EFI_SECURE_BOOT=y` rejects unsigned
 modules under lockdown.
+
+For anything that is not a display tear — audio, video decode, or a tear that
+survives the patches — `scripts/collect-diag.sh` dumps the relevant state
+(read-only, no `sudo` needed for most of it):
+
+```bash
+sudo ./scripts/collect-diag.sh > diag.txt 2>&1
+```
 
 ## The three patches
 
