@@ -56,7 +56,7 @@ tar -xJf "$TARBALL" -C "$WORK" --strip-components=1 \
   echo "intel_ips.h missing after unpack" >&2; exit 1; }
 
 I915DIR="$WORK/drivers/gpu/drm/i915"
-for p in "$HERE"/patches/0001-*.patch "$HERE"/patches/0002-*.patch; do
+for p in "$HERE"/patches/0*.patch; do
   echo "== $(basename "$p")"
   patch -p1 -d "$WORK" --dry-run -N < "$p" >/dev/null
   patch -p1 -d "$WORK" -N < "$p" >/dev/null
@@ -65,6 +65,8 @@ grep -q 'dsi_native_gpio_bypass' "$I915DIR/display/intel_dsi_vbt.c" || {
   echo "0001 did not apply" >&2; exit 1; }
 grep -q 'DSB not used for DSI output' "$I915DIR/display/intel_dsb.c" || {
   echo "0002 did not apply" >&2; exit 1; }
+grep -q 'pci_resize_resource(pdev, resno, bar_size);' "$I915DIR/gt/intel_region_lmem.c" || {
+  echo "0003 did not apply" >&2; exit 1; }
 
 # ---- 1b. make the in-tree trace headers reachable -------------------------
 # i915's four trace headers pin their include path to the in-tree location:

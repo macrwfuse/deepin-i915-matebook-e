@@ -1,0 +1,11 @@
+--- a/drivers/gpu/drm/i915/gt/intel_region_lmem.c
++++ b/drivers/gpu/drm/i915/gt/intel_region_lmem.c
+@@ -37,7 +37,7 @@
+
+ 	_release_bars(pdev);
+
+-	ret = pci_resize_resource(pdev, resno, bar_size, 0);
++	ret = pci_resize_resource(pdev, resno, bar_size);
+ 	if (ret) {
+ 		drm_info(&i915->drm, "Failed to resize BAR%d to %dM (%pe)\n",
+ 			 resno, 1 << bar_size, ERR_PTR(ret));
