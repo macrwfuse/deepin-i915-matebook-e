@@ -1,0 +1,167 @@
+name: build-deepin-i915
+
+# Rebuilds drivers/gpu/drm/i915 for Deepin 25.3.0 (6.18.56-amd64-desktop-rolling)
+# without a Deepin install: upstream 6.18.56 sources, the headers package Deepin
+# shipped (exact .config, Module.symvers, generated headers, prebuilt kbuild
+# helpers) and Deepin's own gcc-12, so the DWARF -- and therefore every
+# exported-symbol CRC gendwarfksyms derives from it -- comes from the same
+# compiler Deepin used.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md']
+  pull_request:
+    paths-ignore: ['**/*.md']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KVER: 6.18.56-amd64-desktop-rolling
+  HDR_DEB: linux-headers-6.18.56-amd64-desktop-rolling_25.01.01.40_amd64.deb
+  HDR_URL: https://cdn-community-packages.deepin.com/deepin/beige/pool/commercial/l/linux-upstream
+  HDR_SHA256: a5969b97af6d7f7ba26516d7b4a78cb4a2fe9cab9bdf39c5d4c9904a35693cc4
+  GCC_VER: 12.3.0-17deepin12
+  GCC_URL: https://cdn-community-packages.deepin.com/deepin/beige/pool/main/g/gcc-12
+  TARBALL: linux-6.18.56.tar.xz
+  TARBALL_URL: https://cdn.kernel.org/pub/linux/kernel/v6.x
+  TARBALL_SHA256: 4633bbda2ab95eaf2a7af4041236451d6759c72e6946265531af4b3aacefbf89
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      # Ubuntu noble's gcc-12 is 12.4.0-2ubuntu1~24.04.1 nowadays; Deepin built
+      # the kernel with 12.3.0-17deepin12. gendwarfksyms derives exported-symbol
+      # CRCs from the DWARF the compiler emits, so the compiler is part of the
+      # ABI. Deepin's gcc-12 debs are still on their CDN and only need glibc
+      # <= 2.38 (noble has 2.39). Installing them makes `gcc --version` print
+      # exactly CONFIG_CC_VERSION_TEXT, so kbuild does not even warn.
+      #
+      # binutils (as/ld 2.42) stays Ubuntu's: CONFIG_LD_VERSION is only read by
+      # in-tree targets, and layout differences cannot change type DWARF.
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            make binutils patch python3 dpkg xz-utils zstd curl ca-certificates bc \
+            libdw-dev libelf-dev zlib1g \
+            libisl23 libmpc3 libmpfr6 libgmp10 libzstd1 libstdc++6
+          ld --version | head -1
+          make --version | head -1
+          python3 --version
+
+      - name: Cache tarball and Debian packages
+        uses: actions/cache@v4
+        with:
+          path: in/
+          key: deepin-${{ env.KVER }}-${{ env.TARBALL_SHA256 }}-${{ env.HDR_SHA256 }}-${{ env.GCC_VER }}
+
+      - name: Fetch and install Deepin gcc-12
+        run: |
+          mkdir -p in
+          cd in
+          for p in gcc-12 cpp-12 libgcc-12-dev gcc-12-base; do
+            deb="${p}_${GCC_VER}_amd64.deb"
+            [ -f "$deb" ] || curl -fsSL --retry 4 -o "$deb" "$GCC_URL/$deb"
+          done
+          printf '%s  %s\n' \
+            19eb62b7e0fbabb2718441760b1d4c73254a7ca218ab8d772c2d1a8ff9b2b451 cpp-12_${GCC_VER}_amd64.deb \
+            d0db952c0cf25128b1d40212306814efc5e700c3274722ca20805d29aff239cc gcc-12-base_${GCC_VER}_amd64.deb \
+            e8efbcced19e5b1ba3c4faad467ccd79d49c238a4090230c2f671cfa842a1bb1 gcc-12_${GCC_VER}_amd64.deb \
+            c70d1a34828a4fd14d6880c28a09762cc1bf7134a9c9dcc1c8327b70bfdee707 libgcc-12-dev_${GCC_VER}_amd64.deb \
+            | sha256sum -c -
+          cd ..
+          # Overlay rather than dpkg -i: nothing here is in the same path as
+          # noble's gcc-13/14, and the driver's compiled-in
+          # /usr/lib/gcc/x86_64-linux-gnu/12 lines up with the overlay. dpkg
+          # would also drag gcc-12-base into the package database for no gain.
+          rm -rf dgcc && mkdir -p dgcc
+          for d in in/*_${GCC_VER}_amd64.deb; do dpkg-deb -x "$d" dgcc; done
+          sudo cp -a dgcc/usr/. /usr/
+          # GCC prints argv[0] in its version line, and kbuild compares that
+          # line against CONFIG_CC_VERSION_TEXT verbatim. Deepin built with
+          # plain `gcc`, so provide that name.
+          sudo ln -sf /usr/bin/x86_64-linux-gnu-gcc-12 /usr/local/bin/gcc
+          hash -r
+          command -v gcc
+          gcc --version | head -1
+          gcc --version | head -1 | grep -Fx 'gcc (Deepin 12.3.0-17deepin12) 12.3.0'
+          test -x "$(gcc -print-prog-name=cc1)"
+          test -x "$(gcc -print-prog-name=collect2)"
+          gcc -print-search-dirs
+
+      - name: Fetch and verify Deepin headers package
+        run: |
+          mkdir -p in
+          [ -f "in/$HDR_DEB" ] || curl -fsSL --retry 4 -o "in/$HDR_DEB" "$HDR_URL/$HDR_DEB"
+          echo "$HDR_SHA256  in/$HDR_DEB" | sha256sum -c -
+          rm -rf headers && mkdir -p headers
+          dpkg-deb -x "in/$HDR_DEB" headers
+          KDIR="headers/usr/src/$KVER"
+          test -f "$KDIR/Module.symvers"
+          test -f "$KDIR/.config"
+          test -f "$KDIR/include/config/kernel.release"
+          test -x "$KDIR/scripts/mod/modpost"
+          test -x "$KDIR/tools/objtool/objtool"
+          test -x "$KDIR/scripts/gendwarfksyms/gendwarfksyms"
+          echo "KDIR=$KDIR" >> "$GITHUB_ENV"
+          cat "$KDIR/include/config/kernel.release"
+
+      - name: Fetch and verify upstream source
+        run: |
+          mkdir -p in
+          [ -f "in/$TARBALL" ] || curl -fsSL --retry 4 -o "in/$TARBALL" "$TARBALL_URL/$TARBALL"
+          echo "$TARBALL_SHA256  in/$TARBALL" | sha256sum -c -
+
+      - name: Build and verify
+        env:
+          CC: gcc
+        run: |
+          set -o pipefail
+          chmod +x scripts/build.sh
+          TARBALL="in/$TARBALL" KDIR="$KDIR" ./scripts/build.sh 2>&1 | tee build.log
+
+      - name: Show verification summary
+        if: always()
+        run: |
+          echo '--- verify.txt ---'
+          cat out/verify.txt 2>/dev/null || true
+          echo '--- artifacts ---'
+          ls -l out 2>/dev/null || true
+
+      - name: Upload i915.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepin-i915-${{ env.KVER }}
+          path: |
+            out/i915.ko
+            out/i915.ko.zst
+            out/i915.vermagic
+            out/verify.txt
+            out/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build.log
+            out/verify.txt
+          if-no-files-found: ignore
+          retention-days: 7
