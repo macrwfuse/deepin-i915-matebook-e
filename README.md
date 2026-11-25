@@ -41,7 +41,8 @@ skips modules with `btf_data_size == 0`.
 ## Layout
 
 ```
-patches/      0001 native MIPI GPIO bypass, 0002 no DSB for DSI
+patches/      0001 native MIPI GPIO bypass, 0002 no DSB for DSI,
+              0003 Deepin's 3-argument pci_resize_resource()
 abi/          ABI fingerprint of Deepin's shipped i915.ko
 tools/        verify-module.py, emit-abi-fixture.py
 scripts/      build.sh (CI), install-i915.sh (on-device)
@@ -102,7 +103,7 @@ cat /sys/module/i915/parameters/dsi_native_gpio_bypass   # -1 = auto (DMI match)
 Secure Boot must be off: `LOCK_DOWN_IN_EFI_SECURE_BOOT=y` rejects unsigned
 modules under lockdown.
 
-## The two patches
+## The three patches
 
 `0001` — in `mipi_exec_gpio()`, skip the native MIPI GPIO sequence when DMI
 matches `HUAWEI` + `DRC-WXX` (or `MateBook E*`). The firmware already powered
@@ -114,5 +115,19 @@ Module parameter `i915.dsi_native_gpio_bypass`: `-1` auto (default), `0` never,
 Since 6.13 (`45c548642b56`) DSB is used for plane/color too, so on 6.18 this is
 expected to matter.
 
-Both were regenerated against pristine upstream v6.18.56 and apply cleanly with
-`patch -p1` from the source root.
+`0003` — not a fix: Deepin's tree is not pristine upstream. Their 6.18.56
+headers export `pci_resize_resource(struct pci_dev *, int, int)` and keep the
+four-argument variant as `__pci_resize_resource()`. Blob-for-blob, Deepin's
+`drivers/gpu/drm/i915` differs from upstream v6.18.56 in exactly one file,
+`gt/intel_region_lmem.c`, for this reason. Patch 0003 makes the extracted
+tree byte-identical to what Deepin actually compiled (verified against
+`deepin-community/kernel` tag `v25.01.01.41-v6.18.56`).
+
+Also non-patch plumbing: the four in-tree trace headers pin
+`TRACE_INCLUDE_PATH ../../drivers/gpu/drm/i915[...]`, resolved relative to
+`<KDIR>/include/trace`. Headers packages have no `drivers/`, so `build.sh`
+symlinks `<KDIR>/drivers/gpu/drm/i915` at the extracted sources before
+building. `-I` cannot fix this (the path is parent-relative), and the header
+content is untouched, so the DWARF — and every CRC — is unaffected.
+
+All patches apply with `patch -p1` from the source root.
