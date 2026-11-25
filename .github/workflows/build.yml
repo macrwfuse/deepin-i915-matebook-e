@@ -111,7 +111,7 @@ jobs:
           echo "$HDR_SHA256  in/$HDR_DEB" | sha256sum -c -
           rm -rf headers && mkdir -p headers
           dpkg-deb -x "in/$HDR_DEB" headers
-          KDIR="headers/usr/src/$KVER"
+          KDIR="headers/usr/src/linux-headers-$KVER"
           test -f "$KDIR/Module.symvers"
           test -f "$KDIR/.config"
           test -f "$KDIR/include/config/kernel.release"
