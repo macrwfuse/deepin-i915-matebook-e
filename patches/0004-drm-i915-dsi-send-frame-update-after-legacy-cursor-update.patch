@@ -1,0 +1,52 @@
+--- a/drivers/gpu/drm/i915/display/intel_cursor.c
++++ b/drivers/gpu/drm/i915/display/intel_cursor.c
+@@ -13,6 +13,7 @@
+ #include <drm/drm_vblank.h>
+ 
+ #include "i915_utils.h"
++#include "icl_dsi.h"
+ #include "intel_atomic.h"
+ #include "intel_cursor.h"
+ #include "intel_cursor_regs.h"
+@@ -819,6 +820,7 @@
+ 		to_intel_crtc_state(crtc->base.state);
+ 	struct intel_crtc_state *new_crtc_state;
+ 	struct intel_vblank_evade_ctx evade;
++	bool dsi_frame_update = false;
+ 	int ret;
+ 
+ 	/*
+@@ -938,8 +940,33 @@
+ 		intel_plane_disable_arm(NULL, plane, crtc_state);
+ 	}
+ 
++	/*
++	 * In DSI command mode the panel only latches the pipe contents when it
++	 * receives a frame update request. The atomic commit path sends one
++	 * from intel_pipe_update_end(), but this fast path bypasses that
++	 * function, so a cursor move would otherwise never be latched: the
++	 * pointer only jumps when some unrelated commit happens to send the
++	 * request. mode_flags also tells us whether the panel really runs in
++	 * command mode (TE0/TE1 set) or video mode, where
++	 * icl_dsi_frame_update() is a no-op.
++	 */
++	if (DISPLAY_VER(display) >= 11 &&
++	    intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DSI)) {
++		dsi_frame_update = true;
++		icl_dsi_frame_update(crtc_state);
++	}
++
+ 	local_irq_enable();
+ 
++	/* Printed outside the IRQ-off section: drm_info_once() may reach a
++	 * slow console, which must not happen while the pipe update is being
++	 * kept inside the vblank window. */
++	if (dsi_frame_update)
++		drm_info_once(display->drm,
++			      "[CRTC:%d:%s] DSI legacy cursor fastpath: sending frame update (mode_flags=0x%x)\n",
++			      crtc->base.base.id, crtc->base.name,
++			      crtc_state->mode_flags);
++
+ 	intel_psr_unlock(crtc_state);
+ 
+ 	if (old_plane_state->ggtt_vma != new_plane_state->ggtt_vma) {

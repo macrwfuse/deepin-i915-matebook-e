@@ -61,13 +61,18 @@ Reboot to take effect. Afterwards check, in this order:
      cat /sys/module/i915/parameters/dsi_native_gpio_bypass
    -1 = auto (DMI decides), 0 = force off, 1 = force on.
 
-2. Both patches now announce themselves at info level (no drm.debug needed):
+2. All patches announce themselves at info level (no drm.debug needed):
      dmesg | grep -i 'Not touching native DSI GPIOs'
      dmesg | grep -i 'DSB not used for DSI output'
+     dmesg | grep -i 'DSI legacy cursor fastpath'
    Expected:
      i915 ...: Not touching native DSI GPIOs (dsi_native_gpio_bypass=-1, -1 = auto/DMI), keeping firmware state
      i915 ...: [CRTC:..:dsi-1] DSB not used for DSI output, falling back to MMIO
-   If the first line is absent, the DMI table did not match - see step 3.
+     i915 ...: [CRTC:..:dsi-1] DSI legacy cursor fastpath: sending frame update (mode_flags=0x18)
+   If the first line is absent, the DMI table did not match - see step 3. The
+   third line appears the first time the pointer moves; mode_flags 0x18 means
+   TE0|TE1 (dual link, command mode), and that is why cursor moves need the
+   explicit frame update.
 
 3. Behaviour: the torn/split image should be gone. That alone is the result.
 

@@ -38,10 +38,10 @@ run cat /sys/class/drm/card*-*/modes 2>/dev/null
 sec display-kernel-log
 run dmesg --level=err,warn
 run dmesg
-# The two lines that prove the patches are active (info level, always on).
+# The lines that prove the patches are active (info level, always on).
 printf '\n$ grep patch markers\n'
-dmesg | grep -iE 'Not touching native DSI GPIOs|DSB not used for DSI output' \
-      || echo '(neither marker present - the patches did not run)'
+dmesg | grep -iE 'Not touching native DSI GPIOs|DSB not used for DSI output|DSI legacy cursor fastpath' \
+      || echo '(no marker present - the patches did not run)'
 
 sec display-state
 run cat /sys/kernel/debug/dri/0/i915_vbt

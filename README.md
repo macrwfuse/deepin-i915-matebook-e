@@ -42,7 +42,8 @@ skips modules with `btf_data_size == 0`.
 
 ```
 patches/      0001 native MIPI GPIO bypass, 0002 no DSB for DSI,
-              0003 Deepin's 3-argument pci_resize_resource()
+              0003 Deepin's 3-argument pci_resize_resource(),
+              0004 frame update after legacy cursor update on DSI
 abi/          ABI fingerprint of Deepin's shipped i915.ko
 tools/        verify-module.py, emit-abi-fixture.py
 scripts/      build.sh (CI), install-i915.sh (on-device),
@@ -99,11 +100,18 @@ Verify after boot:
 cat /sys/module/i915/parameters/dsi_native_gpio_bypass   # -1 = auto (DMI match)
 dmesg | grep -i 'Not touching native DSI GPIOs'
 dmesg | grep -i 'DSB not used for DSI output'
+dmesg | grep -i 'DSI legacy cursor fastpath'
 ```
 
 The first command is the proof that this module is the one running: Deepin's
-shipped `i915.ko` has no such parameter. Both `dmesg` lines are `info` level,
-so they are visible on a stock boot with no `drm.debug` switch.
+shipped `i915.ko` has no such parameter. All three `dmesg` lines are `info`
+level, so they are visible on a stock boot with no `drm.debug` switch.
+
+The fourth check exists because it also reports `mode_flags`: TE0/TE1 set
+means the panel really runs in command mode; without them the patch line
+prints but `icl_dsi_frame_update()` is a no-op, i.e. the panel could never
+have needed it. It is printed from the fast path itself, so seeing it proves
+cursor moves really take that path.
 
 Secure Boot must be off: `LOCK_DOWN_IN_EFI_SECURE_BOOT=y` rejects unsigned
 modules under lockdown.
@@ -116,7 +124,7 @@ survives the patches — `scripts/collect-diag.sh` dumps the relevant state
 sudo ./scripts/collect-diag.sh > diag.txt 2>&1
 ```
 
-## The three patches
+## The patches
 
 `0001` — in `mipi_exec_gpio()`, skip the native MIPI GPIO sequence when DMI
 matches `HUAWEI` + `DRC-WXX` (or `MateBook E*`). The firmware already powered
@@ -130,6 +138,16 @@ kernel does not set `CONFIG_DRM_DEBUG_KMS`, and DRM debug output is gated on
 `0002` — `intel_dsb_prepare()` returns NULL for DSI CRTCs, forcing plain MMIO.
 Since 6.13 (`45c548642b56`) DSB is used for plane/color too, so on 6.18 this is
 expected to matter.
+
+`0004` — `intel_legacy_cursor_update()` is the legacy cursor fast path: it
+programs the cursor plane directly and never calls `intel_pipe_update_end()`,
+which is the only place that sends `DSI_FRAME_UPDATE_REQUEST` for command-mode
+DSI. A pure cursor move therefore never asks the panel to latch the new pipe
+contents — the pointer only jumps when some unrelated commit happens to send
+the request, which looks like a stuttering, lagging pointer. Patch 0004 sends
+the frame update from the fast path too. Upstream has the same gap (checked
+against `drm-intel-next`); on this machine it is not cosmetic only, because
+the panel is in command mode.
 
 `0003` — not a fix: Deepin's tree is not pristine upstream. Their 6.18.56
 headers export `pci_resize_resource(struct pci_dev *, int, int)` and keep the
